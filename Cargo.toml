@@ -6,7 +6,7 @@ description = "Stack-allocated string with fixed capacity"
 license = "MIT"
 repository = "https://github.com/DanilaMint/microstr"
 documentation = "https://docs.rs/microstr"
-readme = "README.md"
+readme = "readme.md"
 keywords = ["string", "stack", "no-std", "utf8"]
 categories = ["no-std", "data-structures"]
 
