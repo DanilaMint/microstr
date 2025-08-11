@@ -2,7 +2,7 @@
 
 [![crates.io](https://img.shields.io/crates/v/microstr.svg)](https://crates.io/crates/microstr)  
 [![Documentation](https://docs.rs/microstr/badge.svg)](https://docs.rs/microstr)  
-[![License](https://img.shields.io/crates/l/microstr)](https://github.com/DanilaMint/microstr)
+[![License](https://img.shields.io/crates/l/microstr)](https://github.com/DanilaMint/microstr/blob/main/LICENSE)
 
 A lightweight, stack-allocated string with fixed capacity and UTF-8 support.  
 Ideal for `no_std` environments, embedded systems, and performance-critical code.
