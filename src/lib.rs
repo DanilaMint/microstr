@@ -19,7 +19,7 @@
 //! ## Example
 //!
 //! ```rust
-//! use microstr::MicroStr;
+//! use microstr::*;
 //!
 //! let mut s: MicroStr<16> = MicroStr::new();
 //! s.push_str("Hello");
@@ -33,9 +33,10 @@ mod tests;
 #[cfg(feature = "std")]
 mod std_only;
 
+mod macros;
+
 #[cfg(feature = "std")]
 pub use std_only::*;
-
 use core::{
     ptr,
     str::{from_utf8_unchecked, from_utf8_unchecked_mut},
@@ -52,7 +53,7 @@ use core::{
 /// # Usage
 ///
 /// ```rust
-/// use microstr::MicroStr;
+/// use microstr::*;
 /// let mut s: MicroStr<32> = MicroStr::new();
 /// s.push_str("Rust");
 /// s.push('!');
@@ -99,7 +100,7 @@ impl<const CAP: usize> MicroStr<CAP> {
     /// # Example
     ///
     /// ```rust
-    /// use microstr::MicroStr;
+    /// use microstr::*;
     /// let s: MicroStr<10> = MicroStr::new();
     /// assert_eq!(s.len(), 0);
     /// assert_eq!(s.capacity(), 10);
@@ -127,7 +128,7 @@ impl<const CAP: usize> MicroStr<CAP> {
     /// # Example
     ///
     /// ```rust
-    /// use microstr::MicroStr;
+    /// use microstr::*;
     /// let s: MicroStr<5> = MicroStr::from_str("Hello, world!");
     /// assert_eq!(s.as_str(), "Hello"); // Truncated
     /// ```
@@ -150,9 +151,9 @@ impl<const CAP: usize> MicroStr<CAP> {
     /// # Example (unsafe)
     ///
     /// ```rust
-    /// use microstr::MicroStr;
+    /// use microstr::*;
     /// let buf = *b"Hello\0\0\0\0\0";
-    /// let s: MicroStr<10> = unsafe { MicroStr::from_raw_buffer(buf) };
+    /// let s = unsafe { MicroStr::<10>::from_raw_buffer(buf) };
     /// assert_eq!(s.as_str(), "Hello");
     /// ```
     pub unsafe fn from_raw_buffer(buf: [u8; CAP]) -> Self {
@@ -176,7 +177,7 @@ impl<const CAP: usize> MicroStr<CAP> {
     /// # Example (unsafe)
     ///
     /// ```rust
-    /// use microstr::MicroStr;
+    /// use microstr::*;
     /// let mut s: MicroStr<10> = MicroStr::new();
     /// unsafe { s.push_unchecked('A') };
     /// assert_eq!(s.as_str(), "A");
@@ -185,7 +186,7 @@ impl<const CAP: usize> MicroStr<CAP> {
         let char_len = ch.len_utf8();
         let char_bytes = Self::char_to_bytes_utf8(ch);
         let char_ptr = char_bytes.as_ptr();
-        let buf_ptr = self.buffer.as_mut_ptr().add(self.len);
+        let buf_ptr = self.as_mut_ptr().add(self.len);
         ptr::copy_nonoverlapping(char_ptr, buf_ptr, char_len);
         self.len += char_len;
     }
@@ -204,8 +205,8 @@ impl<const CAP: usize> MicroStr<CAP> {
     /// # Example
     ///
     /// ```rust
-    /// use microstr::MicroStr;
-    /// let mut s: MicroStr<1> = MicroStr::new();
+    /// use microstr::*;
+    /// let mut s = MicroStr::<1>::new();
     /// assert!(s.push('A').is_ok());
     /// assert!(s.push('B').is_err()); // No space
     /// ```
@@ -241,8 +242,8 @@ impl<const CAP: usize> MicroStr<CAP> {
     /// # Example (unsafe)
     ///
     /// ```rust
-    /// use microstr::MicroStr;
-    /// let mut s: MicroStr<5> = MicroStr::new();
+    /// use microstr::microstr;
+    /// let mut s = microstr!("", 5);
     /// unsafe { s.push_str_unchecked("Hi") };
     /// assert_eq!(s.as_str(), "Hi");
     /// ```
@@ -267,7 +268,7 @@ impl<const CAP: usize> MicroStr<CAP> {
     ///
     /// ```rust
     /// use microstr::MicroStr;
-    /// let mut s: MicroStr<6> = MicroStr::new();
+    /// let mut s = MicroStr::<6>::new();
     /// let appended = s.push_str("An河🌍"); // "An河🌍" is 9 bytes
     /// assert_eq!(appended, 5); // Only "An河" fits (5 bytes), "🌍" excluded
     /// assert_eq!(s.as_str(), "An河");
@@ -302,8 +303,9 @@ impl<const CAP: usize> MicroStr<CAP> {
         }
 
         if valid_len > 0 {
-            self.buffer[self.len..self.len + valid_len].copy_from_slice(&str_bytes[..valid_len]);
-            self.len += valid_len;
+            unsafe {
+                self.push_bytes(&str_bytes[..valid_len]);
+            }
         }
 
         valid_len
@@ -316,13 +318,13 @@ impl<const CAP: usize> MicroStr<CAP> {
     /// # Example
     ///
     /// ```rust
-    /// use microstr::MicroStr;
-    /// let s: MicroStr<10> = MicroStr::from_str("Hello");
+    /// use microstr::*;
+    /// let s = microstr!("Hello", 10);
     /// assert_eq!(s.as_str(), "Hello");
     /// ```
     pub fn as_str(&self) -> &str {
         // SAFETY: buffer always contains valid UTF-8
-        unsafe { from_utf8_unchecked(&self.buffer[..self.len]) }
+        unsafe { from_utf8_unchecked(self.as_bytes()) }
     }
 
     /// Returns a mutable string slice of the current content.
@@ -336,15 +338,15 @@ impl<const CAP: usize> MicroStr<CAP> {
     /// # Example
     ///
     /// ```rust
-    /// use microstr::MicroStr;
-    /// let mut s: MicroStr<10> = MicroStr::from_str("Hello");
+    /// use microstr::*;
+    /// let mut s = microstr!("Hello", 10);
     /// let s_mut = s.as_str_mut();
     /// s_mut.make_ascii_uppercase();
     /// assert_eq!(s.as_str(), "HELLO");
     /// ```
     pub fn as_str_mut(&mut self) -> &mut str {
         // SAFETY: buffer always contains valid UTF-8
-        unsafe { from_utf8_unchecked_mut(&mut self.buffer[..self.len]) }
+        unsafe { from_utf8_unchecked_mut(self.as_mut_bytes()) }
     }
 
     /// Returns a raw pointer to the first byte of the internal buffer.
@@ -354,8 +356,8 @@ impl<const CAP: usize> MicroStr<CAP> {
     /// # Example
     ///
     /// ```rust
-    /// use microstr::MicroStr;
-    /// let s: MicroStr<10> = MicroStr::from_str("Hi");
+    /// use microstr::*;
+    /// let s = microstr!("Hi", 10);
     /// let ptr = s.as_ptr();
     /// assert_eq!(unsafe { *ptr }, b'H');
     /// ```
@@ -370,8 +372,8 @@ impl<const CAP: usize> MicroStr<CAP> {
     /// # Example
     ///
     /// ```rust
-    /// use microstr::MicroStr;
-    /// let mut s: MicroStr<10> = MicroStr::new();
+    /// use microstr::*;
+    /// let mut s = MicroStr::<10>::new();
     /// let ptr = s.as_mut_ptr();
     /// unsafe {
     ///     *ptr = b'X';
@@ -386,8 +388,8 @@ impl<const CAP: usize> MicroStr<CAP> {
     /// # Example
     ///
     /// ```rust
-    /// use microstr::MicroStr;
-    /// let s: MicroStr<10> = MicroStr::from_str("Hi");
+    /// use microstr::*;
+    /// let s = microstr!("Hi", 10);
     /// assert_eq!(s.as_bytes(), b"Hi");
     /// ```
     pub fn as_bytes(&self) -> &[u8] {
@@ -401,8 +403,8 @@ impl<const CAP: usize> MicroStr<CAP> {
     /// # Example
     ///
     /// ```rust
-    /// use microstr::MicroStr;
-    /// let mut s: MicroStr<10> = MicroStr::from_str("abc");
+    /// use microstr::*;
+    /// let mut s = MicroStr::<10>::from_str("abc");
     /// let bytes = s.as_mut_bytes();
     /// bytes[0] = b'x';
     /// assert_eq!(s.as_str(), "xbc");
@@ -418,8 +420,8 @@ impl<const CAP: usize> MicroStr<CAP> {
     /// # Example
     ///
     /// ```rust
-    /// use microstr::MicroStr;
-    /// let s: MicroStr<10> = MicroStr::from_str("💖");
+    /// use microstr::*;
+    /// let s = microstr!("💖", 10);
     /// assert_eq!(s.bytes_len(), 4); // 4-byte UTF-8 emoji
     /// ```
     pub fn bytes_len(&self) -> usize {
@@ -433,7 +435,7 @@ impl<const CAP: usize> MicroStr<CAP> {
     /// # Example
     ///
     /// ```rust
-    /// use microstr::MicroStr;
+    /// use microstr::*;
     /// let s: MicroStr<32> = MicroStr::new();
     /// assert_eq!(s.capacity(), 32);
     /// ```
@@ -448,8 +450,8 @@ impl<const CAP: usize> MicroStr<CAP> {
     /// # Example
     ///
     /// ```rust
-    /// use microstr::MicroStr;
-    /// let s: MicroStr<10> = MicroStr::from_str("💖Rust");
+    /// use microstr::*;
+    /// let s = microstr!("💖Rust", 10);
     /// assert_eq!(s.len(), 5); // '💖' is one char, 'R','u','s','t'
     /// ```
     pub fn len(&self) -> usize {
@@ -463,13 +465,30 @@ impl<const CAP: usize> MicroStr<CAP> {
     /// # Example
     ///
     /// ```rust
-    /// use microstr::MicroStr;
-    /// let s: MicroStr<8> = MicroStr::from_str("Hi");
+    /// use microstr::*;
+    /// let s = microstr!("Hi", 8);
     /// let buf = s.into_raw_buffer();
     /// assert_eq!(&buf[..2], b"Hi");
     /// ```
     pub fn into_raw_buffer(self) -> [u8; CAP] {
         self.buffer
+    }
+
+    /// Clears str to `default` state.
+    /// 
+    /// Sets length as 0 and first byte b'\0'
+    /// 
+    /// # Example
+    /// 
+    /// ```rust
+    /// use microstr::*;
+    /// let mut s = microstr!("Clear me!");
+    /// s.clear();
+    /// assert_eq!(s.as_str(), "");
+    /// ```
+    pub fn clear(&mut self) {
+        self.len = 0;
+        self.buffer.get_mut(0).map(|x| *x = 0);
     }
 }
 
@@ -488,9 +507,9 @@ impl<const A: usize, const B: usize> PartialEq<MicroStr<B>> for MicroStr<A> {
     /// # Example
     ///
     /// ```rust
-    /// use microstr::MicroStr;
-    /// let a: MicroStr<10> = MicroStr::from_str("test");
-    /// let b: MicroStr<15> = MicroStr::from_str("test");
+    /// use microstr::*;
+    /// let a = microstr!("test", 10);
+    /// let b = microstr!("test", 15);
     /// assert_eq!(a, b);
     /// ```
     fn eq(&self, other: &MicroStr<B>) -> bool {
@@ -511,8 +530,8 @@ impl<const CAP: usize> Deref for MicroStr<CAP> {
     /// Enables calling string methods directly:
     ///
     /// ```rust
-    /// use microstr::MicroStr;
-    /// let s: MicroStr<10> = MicroStr::from_str("hello");
+    /// use microstr::*;
+    /// let s = microstr!("hello");
     /// assert!(s.starts_with("he"));
     /// assert_eq!(s.to_uppercase(), "HELLO");
     /// ```
@@ -529,8 +548,8 @@ impl<const CAP: usize> DerefMut for MicroStr<CAP> {
     /// # Example
     ///
     /// ```rust
-    /// use microstr::MicroStr;
-    /// let mut s: MicroStr<10> = MicroStr::from_str("rust");
+    /// use microstr::*;
+    /// let mut s = microstr!("rust");
     /// s.make_ascii_uppercase();
     /// assert_eq!(s.as_str(), "RUST");
     /// ```

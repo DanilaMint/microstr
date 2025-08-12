@@ -1,4 +1,4 @@
-use super::MicroStr;
+use super::{MicroStr, microstr};
 
 #[test]
 fn basic_operations() {
@@ -140,4 +140,15 @@ fn capacity_edge_cases() {
     let mut s = MicroStr::<0>::new();
     assert_eq!(s.push('a'), Err(()));
     assert_eq!(s.push_str("test"), 0);
+}
+
+#[test]
+fn macro_tests() {
+    let s1 = microstr!("Hello, world");
+    let s2 = microstr!("Hello, world", 20);
+    let s3 = microstr!("Hello, world", 5);
+
+    assert_eq!(s1.capacity(), 12);
+    assert_eq!(s2.capacity(), 20);
+    assert_eq!(s3.capacity(), 5);
 }

@@ -1,0 +1,11 @@
+# ChangeLog
+
+## 0.2
+### Added:
+- Macro `microstr!`
+- Method `.clear()`
+### Edited:
+- Docs to `microstr!` using
+
+## 0.1
+- Initial version
