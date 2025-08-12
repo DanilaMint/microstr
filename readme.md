@@ -9,7 +9,7 @@ Ideal for `no_std` environments, embedded systems, and performance-critical code
 
 ```toml
 [dependencies]
-microstr = "0.1"
+microstr = "0.2"
 ```
 
 ## Features
@@ -53,7 +53,7 @@ Enable optional features in `Cargo.toml`:
 
 ```toml
 [dependencies]
-microstr = { version = "0.1", features = ["std", "serde"] }
+microstr = { version = "0.2", features = ["std", "serde"] }
 ```
 
 | Feature | Description |
