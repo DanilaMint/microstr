@@ -29,19 +29,17 @@
 
 #[cfg(test)]
 mod tests;
-
 #[cfg(feature = "std")]
 mod std_only;
-
+#[macro_use]
 mod macros;
 
-#[cfg(feature = "std")]
-pub use std_only::*;
 use core::{
-    ptr,
-    str::{from_utf8_unchecked, from_utf8_unchecked_mut},
-    cmp::PartialEq,
-    ops::{Deref, DerefMut},
+    cmp::PartialEq, 
+    fmt, 
+    ops::{Deref, DerefMut}, 
+    ptr, 
+    str::{from_utf8_unchecked, from_utf8_unchecked_mut}
 };
 
 /// A fixed-capacity, stack-allocated string with UTF-8 support.
@@ -79,20 +77,10 @@ pub struct MicroStr<const CAP: usize> {
     len: usize,
 }
 
-impl<const CAP: usize> MicroStr<CAP> {
-    /// Converts a Unicode character into its UTF-8 byte representation.
-    ///
-    /// This is a helper method used internally to encode characters.
-    ///
-    /// # Returns
-    ///
-    /// A 4-byte array containing the UTF-8 encoding of `ch`, padded with zeros.
-    const fn char_to_bytes_utf8(ch: char) -> [u8; 4] {
-        let mut result = [0; 4];
-        ch.encode_utf8(&mut result);
-        result
-    }
-
+impl<const CAP: usize> MicroStr<CAP>
+{
+    /* ##### STRUCT BUILDING ##### */
+    
     /// Creates an empty `MicroStr`.
     ///
     /// The string has length 0 and can hold up to `CAP` bytes.
@@ -123,19 +111,106 @@ impl<const CAP: usize> MicroStr<CAP> {
     ///
     /// # Returns
     ///
-    /// A new `MicroStr` containing up to `CAP` bytes of `s`.
+    /// Ok(MicroStr) - full size fits
+    /// Err((MicroStr, usize)) - if only the first `usize` bytes were appended due to capacity.
     ///
     /// # Example
     ///
     /// ```rust
     /// use microstr::*;
-    /// let s: MicroStr<5> = MicroStr::from_str("Hello, world!");
+    /// match MicroStr::<5>::from_str("Hello, world!") {
+    ///     Ok(string) => unreachable!(),
+    ///     Err((string, fit_bytes)) => {
+    ///         assert_eq!(string.as_str(), "Hello"); // truncated
+    ///         assert_eq!(fit_bytes, 5);
+    ///     }
+    /// }
+    /// ```
+    #[must_use = "this returns a new `MicroStr`, it does not modify `self`"]
+    pub fn from_str(s: &str) -> Result<Self, (Self, usize)> {
+        let mut result = Self::new();
+        match result.push_str(s) {
+            Ok(()) => {Ok(result)},
+            Err(bytes) => {Err((result, bytes))}
+        }
+    }
+
+    /// Constructs a `MicroStr` from a string slice.
+    /// 
+    /// Equivalent [`MicroStr::from_str`] without Result returning and const support
+    /// 
+    /// If the input string is longer than the capacity, it is **truncated** to fit,
+    /// ensuring UTF-8 validity (does not split multi-byte characters).
+    /// 
+    /// # Parameters
+    /// - `s`: The input string slice
+    /// 
+    /// # Returns
+    /// 
+    /// `MicroStr`
+    /// 
+    /// # Example
+    /// 
+    /// ```rust
+    /// use microstr::*;
+    /// let s = MicroStr::<5>::from_const("Hello, world!");
     /// assert_eq!(s.as_str(), "Hello"); // Truncated
     /// ```
-    pub fn from_str(s: &str) -> Self {
-        let mut result = Self::new();
-        result.push_str(s);
-        result
+    pub const fn from_const(s: &str) -> Self {
+        let mut buffer = [0u8; CAP];
+        let mut len = const_min(s.len(), CAP);
+        let s_bytes = s.as_bytes();
+
+        // SAFETY: Copy bytes minimal of str length and buffer size
+        unsafe {
+            ptr::copy_nonoverlapping(s.as_ptr(), buffer.as_mut_ptr(), const_min(s.len(), CAP));
+        }
+
+        // Character may be splitted
+        // Checking: if last byte is continue-byte (10xxxxxx), go back.
+        while len > 0
+            && len < s_bytes.len()
+            && len < CAP
+            && (buffer[len - 1] & 0b1100_0000 == 0b1000_0000)
+        {
+            len -= 1;
+        }
+
+        // If character is splitted and last byte is begin of 2-, 3- or 4-byte
+        // sequense and all bytes dont fit, go back too.
+        if len > 0 && len < CAP && len < s_bytes.len() {
+            let last_byte = buffer[len - 1];
+            match last_byte {
+                0b1100_0000..=0b1101_1111 => {
+                    if len == CAP || len == s_bytes.len() {
+                    } else if s_bytes[len] & 0b1100_0000 != 0b1000_0000 {
+                        len -= 1;
+                    }
+                }
+                0b1110_0000..=0b1110_1111 => {
+                    if len + 1 >= CAP || len + 1 >= s_bytes.len() {
+                        len -= 1;
+                    } else if (s_bytes[len] & 0b1100_0000 != 0b1000_0000)
+                        || (s_bytes[len + 1] & 0b1100_0000 != 0b1000_0000)
+                    {
+                        len -= 1;
+                    }
+                }
+                0b1111_0000..=0b1111_0111 => {
+                    if len + 2 >= CAP || len + 2 >= s_bytes.len() {
+                        len -= 1;
+                    } else if (s_bytes[len] & 0b1100_0000 != 0b1000_0000)
+                        || (s_bytes[len + 1] & 0b1100_0000 != 0b1000_0000)
+                        || (s_bytes[len + 2] & 0b1100_0000 != 0b1000_0000)
+                    {
+                        len -= 1;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        Self { buffer, len }
     }
 
     /// Constructs a `MicroStr` from a raw byte buffer.
@@ -167,6 +242,155 @@ impl<const CAP: usize> MicroStr<CAP> {
         Self { buffer: buf, len }
     }
 
+    /// Constructs a `MicroStr` from a string slice.
+    /// 
+    /// # Safety
+    /// - s.len() must be less, than .capacity()
+    /// 
+    /// # Parameters
+    /// 
+    /// - `s`: The input string slice
+    /// 
+    /// # Returns
+    /// 
+    /// A new `MicroStr` containing up to `CAP` bytes of `s`.
+    /// 
+    /// # Example
+    /// 
+    /// ```rust
+    /// use microstr::*;
+    /// let s1 = unsafe { MicroStr::<16>::from_str_unchecked("Hello, world!") };
+    /// // let s2 = unsafe { MicroStr::<15>::from_str_unchecked("Привет, мир!") }; // UB: 'м' be splitted
+    /// ```
+    pub const unsafe fn from_str_unchecked(s: &str) -> Self {
+        let mut buf = [0; CAP];
+        let to_copy = const_min(s.len(), CAP);
+        ptr::copy_nonoverlapping(s.as_ptr(), buf.as_mut_ptr(), to_copy);
+        Self {
+            buffer: buf,
+            len: to_copy
+        }
+    }
+
+    /* ##### GETTERS ##### */
+
+    /// Returns a raw pointer to the first byte of the internal buffer.
+    ///
+    /// Useful for FFI or low-level operations.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use microstr::*;
+    /// let s = microstr!("Hi", 10);
+    /// let ptr = s.as_ptr();
+    /// assert_eq!(unsafe { *ptr }, b'H');
+    /// ```
+    #[inline]
+    pub fn as_ptr(&self) -> *const u8 {
+        self.buffer.as_ptr()
+    }
+
+    /// Returns a mutable raw pointer to the first byte of the internal buffer.
+    ///
+    /// Useful for FFI or zero-copy input parsing.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use microstr::*;
+    /// let mut s = MicroStr::<10>::new();
+    /// let ptr = s.as_mut_ptr();
+    /// unsafe {
+    ///     *ptr = b'X';
+    /// }
+    /// ```
+    #[inline]
+    pub fn as_mut_ptr(&mut self) -> *mut u8 {
+        self.buffer.as_mut_ptr()
+    }
+
+    /// Returns the total capacity in bytes.
+    ///
+    /// This is the maximum number of bytes the string can hold.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use microstr::*;
+    /// let s: MicroStr<32> = MicroStr::new();
+    /// assert_eq!(s.capacity(), 32);
+    /// ```
+    #[inline]
+    pub fn capacity(&self) -> usize {
+        CAP
+    }
+
+    /// Returns the number of unused bytes available for writing.
+    ///
+    /// Equivalent to `self.capacity() - self.bytes_len()`.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use microstr::*;
+    /// let mut s = microstr!("Hi", 10);
+    /// assert_eq!(s.extra_capacity(), 8);
+    /// ```
+    #[inline]
+    pub fn extra_capacity(&self) -> usize {
+        CAP - self.len
+    }
+
+    /// Returns `true` if the string has zero length.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use microstr::*;
+    /// let mut s: MicroStr<10> = MicroStr::new();
+    /// assert!(s.is_empty());
+    /// s.push('x');
+    /// assert!(!s.is_empty());
+    /// ```
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    /// Returns the number of bytes currently used in the string.
+    ///
+    /// This is the length in bytes, not Unicode scalar values.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use microstr::*;
+    /// let s = microstr!("💖", 10);
+    /// assert_eq!(s.bytes_len(), 4); // 4-byte UTF-8 emoji
+    /// ```
+    #[inline]
+    pub fn bytes_len(&self) -> usize {
+        self.len
+    }
+
+    /// Returns the number of Unicode scalar values (chars) in the string.
+    ///
+    /// This is computed by iterating over `chars()`, so it's O(n).
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use microstr::*;
+    /// let s = microstr!("💖Rust", 10);
+    /// assert_eq!(s.len(), 5); // '💖' is one char, 'R','u','s','t'
+    /// ```
+    pub fn len(&self) -> usize {
+        self.chars().count()
+    }
+
+    /* ##### PUSHERS ##### */
+
     /// Appends a character to the end of the string without bounds checking.
     ///
     /// # Safety
@@ -184,7 +408,7 @@ impl<const CAP: usize> MicroStr<CAP> {
     /// ```
     pub unsafe fn push_unchecked(&mut self, ch: char) {
         let char_len = ch.len_utf8();
-        let char_bytes = Self::char_to_bytes_utf8(ch);
+        let char_bytes = char_to_bytes_utf8(ch);
         let char_ptr = char_bytes.as_ptr();
         let buf_ptr = self.as_mut_ptr().add(self.len);
         ptr::copy_nonoverlapping(char_ptr, buf_ptr, char_len);
@@ -218,20 +442,7 @@ impl<const CAP: usize> MicroStr<CAP> {
         }
         Err(())
     }
-
-    /// Appends raw bytes to the string without UTF-8 or bounds checking.
-    ///
-    /// # Safety
-    ///
-    /// - `bytes` must be valid UTF-8.
-    /// - `self.len() + bytes.len()` must not exceed `CAP`.
-    ///
-    /// This is a low-level helper method; prefer `push_str` or `push_str_unchecked`.
-    unsafe fn push_bytes(&mut self, bytes: &[u8]) {
-        self.buffer[self.len..self.len + bytes.len()].copy_from_slice(bytes);
-        self.len += bytes.len();
-    }
-
+    
     /// Appends a string slice without bounds checking.
     ///
     /// # Safety
@@ -248,8 +459,8 @@ impl<const CAP: usize> MicroStr<CAP> {
     /// assert_eq!(s.as_str(), "Hi");
     /// ```
     pub unsafe fn push_str_unchecked(&mut self, s: &str) {
-        let bytes = s.as_bytes();
-        self.push_bytes(bytes);
+        ptr::copy_nonoverlapping(s.as_ptr(), self.as_mut_ptr().add(self.len), s.len());
+        self.len += s.len();
     }
 
     /// Appends a string slice, truncating if necessary to fit capacity.
@@ -262,54 +473,33 @@ impl<const CAP: usize> MicroStr<CAP> {
     ///
     /// # Returns
     ///
-    /// The number of **bytes** actually appended.
+    /// Ok(()) - full slice fits
+    /// Err(usize) - if only the first `n` bytes were appended due to capacity.
     ///
     /// # Example
     ///
     /// ```rust
     /// use microstr::MicroStr;
     /// let mut s = MicroStr::<6>::new();
-    /// let appended = s.push_str("An河🌍"); // "An河🌍" is 9 bytes
-    /// assert_eq!(appended, 5); // Only "An河" fits (5 bytes), "🌍" excluded
+    /// assert_eq!(s.push_str("An"), Ok(())); // An fits
+    /// assert_eq!(s.push_str("河🌍"), Err(3)); // Only "河" fits (3 bytes), "🌍" excluded
     /// assert_eq!(s.as_str(), "An河");
     /// ```
-    pub fn push_str(&mut self, s: &str) -> usize {
-        let available = CAP - self.len;
-        if available == 0 {
-            return 0;
+    pub fn push_str(&mut self, s: &str) -> Result<(), usize> {
+        let truncated = s.truncate(self.extra_capacity());
+        let pushing_len = truncated.len();
+
+        unsafe { self.push_str_unchecked(truncated); };
+
+        if pushing_len == s.len() {
+            return Ok(());
         }
-
-        let str_bytes = s.as_bytes();
-        let max_possible_copy = str_bytes.len().min(available);
-
-        // Find the largest valid UTF-8 prefix that fits
-        let mut valid_len = 0;
-        let mut i = 0;
-        while i < max_possible_copy {
-            let byte = str_bytes[i];
-            let char_len = match byte {
-                0x00..=0x7F => 1,
-                0xC0..=0xDF => 2,
-                0xE0..=0xEF => 3,
-                0xF0..=0xFF => 4,
-                _ => 1, // continuation byte (already handled)
-            };
-
-            if i + char_len > max_possible_copy {
-                break;
-            }
-            valid_len = i + char_len;
-            i = valid_len;
+        else {
+            return Err(pushing_len);
         }
-
-        if valid_len > 0 {
-            unsafe {
-                self.push_bytes(&str_bytes[..valid_len]);
-            }
-        }
-
-        valid_len
     }
+
+    /* ##### TYPE CONVERTERS ##### */
 
     /// Returns a string slice of the current content.
     ///
@@ -349,40 +539,6 @@ impl<const CAP: usize> MicroStr<CAP> {
         unsafe { from_utf8_unchecked_mut(self.as_mut_bytes()) }
     }
 
-    /// Returns a raw pointer to the first byte of the internal buffer.
-    ///
-    /// Useful for FFI or low-level operations.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use microstr::*;
-    /// let s = microstr!("Hi", 10);
-    /// let ptr = s.as_ptr();
-    /// assert_eq!(unsafe { *ptr }, b'H');
-    /// ```
-    pub fn as_ptr(&self) -> *const u8 {
-        self.buffer.as_ptr()
-    }
-
-    /// Returns a mutable raw pointer to the first byte of the internal buffer.
-    ///
-    /// Useful for FFI or zero-copy input parsing.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use microstr::*;
-    /// let mut s = MicroStr::<10>::new();
-    /// let ptr = s.as_mut_ptr();
-    /// unsafe {
-    ///     *ptr = b'X';
-    /// }
-    /// ```
-    pub fn as_mut_ptr(&mut self) -> *mut u8 {
-        self.buffer.as_mut_ptr()
-    }
-
     /// Returns a byte slice of the current content.
     ///
     /// # Example
@@ -392,6 +548,7 @@ impl<const CAP: usize> MicroStr<CAP> {
     /// let s = microstr!("Hi", 10);
     /// assert_eq!(s.as_bytes(), b"Hi");
     /// ```
+    #[inline]
     pub fn as_bytes(&self) -> &[u8] {
         &self.buffer[..self.len]
     }
@@ -404,58 +561,13 @@ impl<const CAP: usize> MicroStr<CAP> {
     ///
     /// ```rust
     /// use microstr::*;
-    /// let mut s = MicroStr::<10>::from_str("abc");
+    /// let mut s = microstr!("abc", 10);
     /// let bytes = s.as_mut_bytes();
     /// bytes[0] = b'x';
     /// assert_eq!(s.as_str(), "xbc");
     /// ```
     pub fn as_mut_bytes(&mut self) -> &mut [u8] {
         &mut self.buffer[..self.len]
-    }
-
-    /// Returns the number of bytes currently used in the string.
-    ///
-    /// This is the length in bytes, not Unicode scalar values.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use microstr::*;
-    /// let s = microstr!("💖", 10);
-    /// assert_eq!(s.bytes_len(), 4); // 4-byte UTF-8 emoji
-    /// ```
-    pub fn bytes_len(&self) -> usize {
-        self.len
-    }
-
-    /// Returns the total capacity in bytes.
-    ///
-    /// This is the maximum number of bytes the string can hold.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use microstr::*;
-    /// let s: MicroStr<32> = MicroStr::new();
-    /// assert_eq!(s.capacity(), 32);
-    /// ```
-    pub fn capacity(&self) -> usize {
-        CAP
-    }
-
-    /// Returns the number of Unicode scalar values (chars) in the string.
-    ///
-    /// This is computed by iterating over `chars()`, so it's O(n).
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use microstr::*;
-    /// let s = microstr!("💖Rust", 10);
-    /// assert_eq!(s.len(), 5); // '💖' is one char, 'R','u','s','t'
-    /// ```
-    pub fn len(&self) -> usize {
-        self.as_str().chars().count()
     }
 
     /// Consumes the `MicroStr` and returns the raw byte buffer.
@@ -474,6 +586,8 @@ impl<const CAP: usize> MicroStr<CAP> {
         self.buffer
     }
 
+    /* ##### MODIFICATORS ##### */
+
     /// Clears str to `default` state.
     /// 
     /// Sets length as 0 and first byte b'\0'
@@ -486,9 +600,43 @@ impl<const CAP: usize> MicroStr<CAP> {
     /// s.clear();
     /// assert_eq!(s.as_str(), "");
     /// ```
+    #[inline]
     pub fn clear(&mut self) {
         self.len = 0;
-        self.buffer.get_mut(0).map(|x| *x = 0);
+        self.buffer.get_mut(0).map(|x| *x = b'\0');
+    }
+
+    /// Truncates the string by index of **char**.
+    ///
+    /// If `char_idx` is greater than or equal to the number of characters,
+    /// this is a no-op.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use microstr::*;
+    /// let mut s = microstr!("💖Rust", 10);
+    /// s.truncate(1);
+    /// assert_eq!(s.as_str(), "💖");
+    /// ```
+    pub fn truncate(&mut self, char_idx : usize) {
+        if char_idx > self.len() { return; }
+        let mut byte_idx = 0;
+        for (idx, ch) in self.chars().enumerate() {
+            if idx == char_idx {
+                break;
+            }
+            byte_idx += ch.len_utf8();
+        }
+        // SAFETY:
+        // - `byte_idx` is computed by summing `ch.len_utf8()` for valid UTF-8 characters.
+        // - The loop stops when `idx == char_idx`, so `byte_idx` corresponds to the start of the next char.
+        // - Since `char_idx < self.len()`, we know `byte_idx < self.len() <= CAP`.
+        // - `self.as_mut_ptr()` is valid for `CAP` bytes.
+        // - `byte_idx < CAP`, so `self.as_mut_ptr().add(byte_idx)` is in bounds.
+        // - We write `0` (null terminator) — safe for UTF-8 and FFI.
+        unsafe { self.as_mut_ptr().add(byte_idx).write(0) };
+        self.len = byte_idx;
     }
 }
 
@@ -556,4 +704,85 @@ impl<const CAP: usize> DerefMut for MicroStr<CAP> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.as_str_mut()
     }
+}
+
+impl<const CAP: usize> fmt::Write for MicroStr<CAP> {
+    fn write_char(&mut self, c: char) -> fmt::Result {
+        self.push(c).map_err(|_| fmt::Error)
+    }
+
+    fn write_fmt(&mut self, args: fmt::Arguments<'_>) -> fmt::Result {
+        self.push_str(args.as_str().ok_or(fmt::Error)?).map_err(|_| fmt::Error)
+    }
+
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        self.push_str(s).map_err(|_| fmt::Error)
+    }
+}
+
+trait BoundaryCheckedTruncate {
+    /// Truncates bytes to valid utf-8
+    fn truncate<'a>(&'a self, i : usize) -> &'a Self;
+}
+
+impl BoundaryCheckedTruncate for str {
+    fn truncate<'a>(&'a self, idx : usize) -> &'a Self {
+        if idx >= self.len() { return self; }
+        if idx == 0 { return ""; }
+
+        let bytes = self.as_bytes();
+
+        if !is_utf8_continuation(bytes[idx]) {
+            // SAFETY: Slice already have valid UTF-8:
+            // - first truncated byte isnt continue of multi-byte char
+            // - &str already contains valid bytes
+            return unsafe {from_utf8_unchecked(&bytes[..idx])}
+        }
+
+        let mut i = idx;
+
+        while i > 0 {
+            i -= 1;
+            let current_byte = bytes[i];
+            if !is_utf8_continuation(current_byte) {
+                return unsafe { from_utf8_unchecked(&bytes[..i]) };
+            }
+            if i <= idx.saturating_sub(4) {
+                // Max UTF-8 sequence is 4 bytes
+                break;
+            }
+        }
+        unsafe { from_utf8_unchecked(&bytes[..i]) }
+    }
+}
+
+
+/// Returns `true` if the byte is a UTF-8 continuation byte (10xxxxxx)
+#[inline(always)]
+fn is_utf8_continuation(byte : u8) -> bool {
+    byte & 0b1100_0000 == 0b1000_0000
+}
+
+/// const-fn analog to min
+#[inline(always)]
+const fn const_min(a : usize, b : usize) -> usize {
+    if a <= b {
+        a
+    } else {
+        b
+    } 
+}
+
+/// Converts a Unicode character into its UTF-8 byte representation.
+///
+/// This is a helper method used internally to encode characters.
+///
+/// # Returns
+///
+/// A 4-byte array containing the UTF-8 encoding of `ch`, padded with zeros.
+#[inline]
+const fn char_to_bytes_utf8(ch: char) -> [u8; 4] {
+    let mut result = [0; 4];
+    ch.encode_utf8(&mut result);
+    result
 }

@@ -19,17 +19,15 @@
 macro_rules! microstr {
     ($s:expr) => {
         {
-            const LEN : usize = $s.len();
-            let mut result = $crate::MicroStr::<{LEN}>::new();
-            unsafe { result.push_str_unchecked($s) };
-            result
+            const STR : &str = $s;
+            const LEN : usize = STR.len();
+            // SAFETY: &str always contains valid UTF-8 bytes in 0..LEN bounds
+            unsafe { $crate::MicroStr::<{LEN}>::from_str_unchecked(STR) }
         }
     };
     ($s:expr, $cap:expr) => {
         {
-            let mut result = $crate::MicroStr::<{$cap}>::new();
-            result.push_str($s);
-            result
+            $crate::MicroStr::<{$cap}>::from_const($s)
         }
     };
 }

@@ -9,10 +9,10 @@ Ideal for `no_std` environments, embedded systems, and performance-critical code
 
 ```toml
 [dependencies]
-microstr = "0.2"
+microstr = "0.3"
 ```
 
-## Features
+## What is MicroStr?
 
 - ✅ **No heap allocations** — fully stack-based.  
 - ✅ **UTF-8 safe** — always valid string content.  
@@ -36,7 +36,7 @@ s.push('!');
 assert_eq!(s.as_str(), "Hello!");
 assert_eq!(s.len(), 6);           // 6 Unicode chars
 assert_eq!(s.bytes_len(), 6);     // 6 bytes
-assert!(s.push_str(" this won't fit entirely") > 0); // Truncated safely
+assert_eq!(s.push_str(" this won't fit entirely"), Err(10)); // Truncated safely
 ```
 
 You can also use it like a regular `&str` thanks to `Deref`:
@@ -47,13 +47,13 @@ if s.starts_with("Hello") {
 }
 ```
 
-## Features
+## Cargo Features
 
 Enable optional features in `Cargo.toml`:
 
 ```toml
 [dependencies]
-microstr = { version = "0.2", features = ["std", "serde"] }
+microstr = { version = "0.3", features = ["std", "serde"] }
 ```
 
 | Feature | Description |
@@ -66,7 +66,7 @@ microstr = { version = "0.2", features = ["std", "serde"] }
 ```rust
 #[cfg(feature = "serde")]
 {
-    let s = MicroStr::from_str::<10>("hello");
+    let s = microstr!("Hello", 11);
     let json = s.to_json().unwrap();
     assert_eq!(json, r#""hello""#);
 
@@ -80,7 +80,21 @@ microstr = { version = "0.2", features = ["std", "serde"] }
 - **Predictable performance**: No allocations, no heap usage.  
 - **Memory safety**: Always valid UTF-8, no buffer overflows.  
 - **Great for constrained environments**: Embedded, kernels, WASM.  
-- **Easy migration**: Drop-in replacement for `String` in many cases.  
+- **Easy migration**: Drop-in replacement for `String` in many cases.
+- **Macro**: Creation via the convenient macro `microstr!`
+
+## Comparison with `heapless::String`
+
+| Feature             | `microstr`               | `heapless::String`       |
+|---------------------|--------------------------|--------------------------|
+| UTF-8 safety        | ✅ Always valid           | ✅ Always valid           |
+| `no_std`            | ✅ Yes                    | ✅ Yes                    |
+| Truncation on write | ✅ Yes (safe)             | ❌ Returns `Err` on overflow |
+| `const fn` support  | ✅ `from_const`, `new`    | Limited                  |
+| Macro convenience   | ✅ `microstr!`            | ❌ No built-in macro     |
+| `serde` support     | ✅ Optional               | ❌ No                    |
+
+`microstr` prioritizes **zero-cost truncation** and **ease of use** in embedded contexts.
 
 ## API Documentation
 

@@ -1,6 +1,6 @@
 [package]
 name = "microstr"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "Stack-allocated string with fixed capacity"
 license = "MIT"
@@ -9,6 +9,7 @@ documentation = "https://docs.rs/microstr"
 readme = "readme.md"
 keywords = ["string", "stack", "no-std", "utf8"]
 categories = ["no-std", "data-structures"]
+rust-version = "1.76"
 
 [features]
 default = ["std"]

@@ -10,8 +10,8 @@ impl<const CAP: usize> Debug for MicroStr<CAP> {
     /// # Example
     ///
     /// ```rust
-    /// use microstr::MicroStr;
-    /// let s: MicroStr<10> = MicroStr::from_str("test");
+    /// use microstr::*;
+    /// let s = microstr!("test", 10);
     /// assert_eq!(format!("{:?}", s), "MicroStr<10>{\"test\"}");
     /// ```
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -27,8 +27,8 @@ impl<const CAP: usize> Display for MicroStr<CAP> {
     /// # Example
     ///
     /// ```rust
-    /// use microstr::MicroStr;
-    /// let s: MicroStr<10> = MicroStr::from_str("Hello");
+    /// use microstr::*;
+    /// let s = microstr!("Hello", 10);
     /// assert_eq!(format!("{}", s), "Hello");
     /// ```
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
@@ -39,15 +39,24 @@ impl<const CAP: usize> Display for MicroStr<CAP> {
 impl<const CAP: usize> From<String> for MicroStr<CAP> {
     /// Converts a `String` into a `MicroStr`, truncating if necessary.
     ///
+    /// # Note
+    ///
+    /// This method is provided for completeness, but prefer using [`MicroStr::from_str`]
+    /// as `String` can be coerced to `&str`, and it's more explicit.
+    ///
     /// # Example
     ///
     /// ```rust
-    /// use microstr::MicroStr;
-    /// let s: MicroStr<5> = MicroStr::from("Hello world".to_string());
+    /// use microstr::*;
+    /// let string = String::from("Hello world");
+    /// let s: MicroStr<5> = MicroStr::from(string);
     /// assert_eq!(s.as_str(), "Hello");
     /// ```
     fn from(value: String) -> Self {
-        Self::from_str(value.as_str())
+        match Self::from_str(&value) {
+            Ok(s) => {s},
+            Err((s, _)) => {s}
+        }
     }
 }
 
@@ -57,13 +66,16 @@ impl<const CAP: usize> From<MicroStr<CAP>> for String {
     /// # Example
     ///
     /// ```rust
-    /// use microstr::MicroStr;
-    /// let stack_s: MicroStr<10> = MicroStr::from_str("Rust");
+    /// use microstr::*;
+    /// let stack_s = microstr!("Rust", 10);
     /// let string: String = String::from(stack_s);
     /// assert_eq!(string, "Rust");
+    /// assert_eq!(string.capacity(), 10);
     /// ```
     fn from(value: MicroStr<CAP>) -> Self {
-        String::from(value.as_str())
+        let mut result = String::with_capacity(CAP);
+        result.push_str(&value);
+        result
     }
 }
 

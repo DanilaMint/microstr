@@ -1,10 +1,21 @@
 # ChangeLog
 
+## 0.3
+### Added:
+- fmt support
+- methods: `from_const`, `truncate`
+- const support for macro
+### Changed:
+- Signatures of `from_str`, `push_str`
+- Very small methods become `#[inline]`
+### Removed:
+- private method `push_bytes`
+
 ## 0.2
 ### Added:
 - Macro `microstr!`
 - Method `.clear()`
-### Edited:
+### Changed:
 - Docs to `microstr!` using
 
 ## 0.1

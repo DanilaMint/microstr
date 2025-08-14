@@ -1,154 +1,217 @@
-use super::{MicroStr, microstr};
+use core::fmt::Write;
+
+use super::{MicroStr, microstr, BoundaryCheckedTruncate};
+
+/* BASE METHODS */
+#[test]
+fn new() {
+    let s: MicroStr<10> = MicroStr::new();
+    assert_eq!(s.as_str(), "");
+    assert_eq!(s.len(), 0);
+}
 
 #[test]
-fn basic_operations() {
-    let mut s = MicroStr::<10>::new();
-    assert_eq!(s.len(), 0);
+fn from_str() {
+    let s = MicroStr::<15>::from_str("Hello, world").expect("Unreachable");
+    assert_eq!(s.as_str(), "Hello, world");
+    
+    let (s, bytes) = MicroStr::<15>::from_str("Привет, мир").unwrap_err();
+    assert_eq!(s.as_str(), "Привет, "); // 'м' has been splitted
+    assert_eq!(bytes, 14);
+}
+
+#[test]
+fn from_const() {
+    let s = MicroStr::<15>::from_const("Constant");
+    assert_eq!(s.as_str(), "Constant");
+}
+
+#[test]
+fn from_raw_buffer() {
+    let buffer = [b'R', b'a', b'w', 0, 0, 0, 0, 0];
+    let s = unsafe { MicroStr::from_raw_buffer(buffer) };
+    assert_eq!(s.as_str(), "Raw");
+}
+
+#[test]
+fn from_str_unchecked() {
+    let s = unsafe { MicroStr::<15>::from_str_unchecked("Hello, world") };
+}
+
+#[test]
+fn pointers() {
+    let mut s = microstr!("Hello, world!");
+
+    unsafe {
+        assert_eq!(*s.as_ptr(), b'H');
+        assert_eq!(*s.as_ptr().add(4), b'o');
+
+        *s.as_mut_ptr().add(4) = b',';
+        *s.as_mut_ptr().add(5) = b' ';
+        *s.as_mut_ptr().add(6) = b'u';
+        *s.as_mut_ptr().add(7) = b'n';
+        *s.as_mut_ptr().add(8) = b's';
+        *s.as_mut_ptr().add(9) = b'a';
+        *s.as_mut_ptr().add(10) = b'f';
+        *s.as_mut_ptr().add(11) = b'e';
+    }
+    assert_eq!(s.as_str(), "Hell, unsafe!");
+}
+
+#[test]
+fn constants_and_variables() {
+    let s = microstr!("Кот", 10);
+
     assert_eq!(s.capacity(), 10);
-    assert_eq!(s.as_str(), "");
+    assert_eq!(s.len(), 3);
+    assert_eq!(s.bytes_len(), 6);
+    assert_eq!(s.extra_capacity(), 4);
+    assert!(!s.is_empty());
+
+    let s = MicroStr::<10>::new();
+    assert!(s.is_empty());
+}
+
+#[test]
+fn push_char() {
+    let mut s = MicroStr::<6>::new();
 
     assert_eq!(s.push('a'), Ok(()));
-    assert_eq!(s.as_str(), "a");
-    assert_eq!(s.len(), 1);
-    assert_eq!(s.bytes_len(), 1);
-}
-
-#[test]
-fn from_str_operations() {
-    let s1 = MicroStr::<5>::from_str("hello");
-    assert_eq!(s1.as_str(), "hello");
-
-    let s2 = MicroStr::<3>::from_str("hello");
-    assert_eq!(s2.as_str(), "hel");
-}
-
-#[test]
-fn push_str_operations() {
-    let mut s = MicroStr::<10>::new();
-    assert_eq!(s.push_str("hello"), 5);
-    assert_eq!(s.push_str(" world"), 5); // Only " worl" fits
-    assert_eq!(s.as_str(), "hello worl");
-}
-
-#[test]
-fn unsafe_operations() {
-    let mut s = MicroStr::<10>::new();
-    unsafe {
-        s.push_unchecked('a');
-        s.push_str_unchecked("bc");
-    }
-    assert_eq!(s.as_str(), "abc");
-}
-
-#[test]
-fn raw_buffer_operations() {
-    let mut buf = [0u8; 10];
-    buf[..5].copy_from_slice(b"hello");
-    let s = unsafe { MicroStr::from_raw_buffer(buf) };
-    assert_eq!(s.as_str(), "hello");
-    assert_eq!(s.into_raw_buffer(), buf);
-}
-
-#[test]
-fn comparison_operations() {
-    let s1 = MicroStr::<5>::from_str("hello");
-    let s2 = MicroStr::<10>::from_str("hello");
-    let s3 = MicroStr::<5>::from_str("world");
+    assert_eq!(s.push('👿'), Ok(()));
+    assert_eq!(s.push('ш'), Err(()));
+    assert_eq!(s.as_str(), "a👿");
     
+    let mut s = MicroStr::<4>::new();
+    unsafe {
+        s.push_unchecked('🦀');
+    }
+    assert_eq!(s.as_str(), "🦀");
+}
+
+#[test]
+fn push_str() {
+    let mut s = microstr!("Hello, ", 15);
+    assert_eq!(s.push_str("world!"), Ok(()));
+    assert_eq!(s.as_str(), "Hello, world!");
+    assert_eq!(s.push_str(" NOT FIT"), Err(2));
+    assert_eq!(s.as_str(), "Hello, world! N");
+}
+
+#[test]
+fn bytes() {
+    let mut s = microstr!("Rust?", 10);
+    assert_eq!(s.as_bytes(), &[b'R', b'u', b's', b't', b'?'][..]);
+    s.as_mut_bytes()[4] = b'!';
+    assert_eq!(s.as_str(), "Rust!");
+}
+
+#[test]
+fn into_raw_buffer() {
+    let s = microstr!("RAW", 4);
+    let buf = s.into_raw_buffer();
+
+    assert_eq!(buf, [b'R', b'A', b'W', 0]);
+}
+
+#[test]
+fn clear() {
+    let mut s = microstr!("Dαηίlα Mίητ");
+    s.clear();
+    assert_eq!(s.as_str(), "");
+    assert_eq!(s.len(), 0);
+}
+
+#[test]
+fn truncate() {
+    let mut s = microstr!("Номер 1234567890");
+    s.truncate(11);
+    assert_eq!(s.as_str(), "Номер 12345");
+}
+
+#[test]
+fn default() {
+    let s: MicroStr<10> = MicroStr::default();
+    assert_eq!(s.as_str(), "");
+    assert_eq!(s.len(), 0);
+}
+
+#[test]
+fn compare() {
+    let s1 = microstr!("hello", 5);
+    let s2 = microstr!("hello", 10);
+    let s3 = microstr!("world", 5);
+
     assert_eq!(s1, s2);
     assert_ne!(s1, s3);
+    assert_ne!(s2, s3);
 }
 
 #[test]
-fn deref_operations() {
-    let s = MicroStr::<10>::from_str("hello");
-    assert_eq!(s.contains("ell"), true);
-    assert_eq!(s.is_empty(), false);
+fn deref() {
+    let s = microstr!("Hello", 15);
+
+    assert!( s.is_ascii() );
+    assert_eq!(s.to_ascii_uppercase(), "HELLO");
 }
 
 #[test]
-fn default_operations() {
-    let s: MicroStr<10> = Default::default();
-    assert_eq!(s.as_str(), "");
-}
+fn fmt() {
+    let mut s = microstr!("", 50);
+    assert_eq!(s.write_char('a'), Ok(()));
+    assert_eq!(s.write_str("bcdef"), Ok(()));
+    assert_eq!(s.write_fmt(format_args!("; {} = {}", "var", 10)), Ok(()));
 
-#[cfg(feature = "std")]
-mod std_tests {
-    use super::*;
-
-    #[test]
-    fn debug_display() {
-        let s = MicroStr::<10>::from_str("test");
-        assert_eq!(format!("{:?}", s), "MicroStr<10>{\"test\"}");
-        assert_eq!(format!("{}", s), "test");
-    }
-
-    #[test]
-    fn string_conversions() {
-        let s = MicroStr::<10>::from_str("hello");
-        let std_str: String = s.into();
-        assert_eq!(std_str, "hello");
-
-        let s2 = MicroStr::<10>::from(String::from("world"));
-        assert_eq!(s2.as_str(), "world");
-    }
-
-    #[test]
-    fn json_operations() {
-        #[cfg(feature = "serde")]
-        {
-            let s = MicroStr::<20>::from_str("{\"key\":\"value\"}");
-            let json = s.to_json().unwrap();
-            assert_eq!(json, "\"{\\\"key\\\":\\\"value\\\"}\"");
-
-            let parsed = MicroStr::<20>::from_json(&json).unwrap();
-            assert_eq!(parsed.as_str(), "{\"key\":\"value\"}");
-        }
-    }
+    assert_eq!(s.as_str(), "abcdef; var = 10");
 }
 
 #[test]
-fn utf8_edge_cases() {
-    // 2-byte UTF-8
-    let mut s = MicroStr::<3>::new();
-    assert_eq!(s.push_str("ф"), 2); // Russian 'ф'
-    assert_eq!(s.as_str(), "ф");
+fn truncate_str() {
+    assert_eq!("Hello, world!".truncate(0), "");
+    assert_eq!("Hello, world!".truncate(10), "Hello, wor");
+    assert_eq!("Hello, world!".truncate(20), "Hello, world!");
 
-    // 3-byte UTF-8
-    let mut s = MicroStr::<4>::new();
-    assert_eq!(s.push_str("€"), 3); // Euro sign
-    assert_eq!(s.as_str(), "€");
+    assert_eq!("Привет мир".truncate(4), "Пр");
+    assert_eq!("Привет мир".truncate(5), "Пр");
+    assert_eq!("Привет мир".truncate(6), "При");
 
-    // 4-byte UTF-8
-    let mut s = MicroStr::<5>::new();
-    assert_eq!(s.push_str("😊"), 4); // Emoji
-    assert_eq!(s.as_str(), "😊");
+    assert_eq!("你好，世界！".truncate(3), "你");
+    assert_eq!("你好，世界！".truncate(4), "你");
+    assert_eq!("你好，世界！".truncate(5), "你");
+    assert_eq!("你好，世界！".truncate(6), "你好");
 
-    // Partial UTF-8
-    let mut s = MicroStr::<3>::new();
-    assert_eq!(s.push_str("😊"), 0); // Not enough space for 4-byte emoji
-    assert_eq!(s.as_str(), "");
+    assert_eq!("🔥🦀💻".truncate(4), "🔥");
+    assert_eq!("🔥🦀💻".truncate(5), "🔥");
+    assert_eq!("🔥🦀💻".truncate(6), "🔥");
+    assert_eq!("🔥🦀💻".truncate(7), "🔥");
+    assert_eq!("🔥🦀💻".truncate(8), "🔥🦀");
+    assert_eq!("🔥🦀💻".truncate(12), "🔥🦀💻");
+}
+
+/* STD ONLY */
+
+#[test]
+fn output() {
+    let s = microstr!("Some Output", 25);
+    assert_eq!(format!("{:?}", s), "MicroStr<25>{\"Some Output\"}");
+    assert_eq!(format!("{}", s), "Some Output");
 }
 
 #[test]
-fn capacity_edge_cases() {
-    // Exact capacity
-    let s = MicroStr::<5>::from_str("hello");
-    assert_eq!(s.as_str(), "hello");
+fn string() {
+    let string = String::from("Heap Allocated!");
 
-    // Zero capacity
-    let mut s = MicroStr::<0>::new();
-    assert_eq!(s.push('a'), Err(()));
-    assert_eq!(s.push_str("test"), 0);
+    let s = MicroStr::<20>::from(string);
+
+    assert_eq!(s.as_str(), "Heap Allocated!");
+
+    let return_string = String::from(s);
+
+    assert_eq!(return_string, "Heap Allocated!");
 }
 
 #[test]
-fn macro_tests() {
-    let s1 = microstr!("Hello, world");
-    let s2 = microstr!("Hello, world", 20);
-    let s3 = microstr!("Hello, world", 5);
-
-    assert_eq!(s1.capacity(), 12);
-    assert_eq!(s2.capacity(), 20);
-    assert_eq!(s3.capacity(), 5);
+#[cfg(feature = "serde")]
+fn serde() {
+    let string = microstr!("{\"key\": 42}");
+    string.to_json();
 }
