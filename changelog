@@ -1,5 +1,13 @@
 # ChangeLog
 
+## 0.4
+### Added:
+- `utf8_truncator` for safe truncating UTF-8
+### Changed:
+- A lot of methods became const
+### Removed:
+- `serde` support, because its unuseful
+
 ## 0.3
 ### Added:
 - fmt support

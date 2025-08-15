@@ -21,7 +21,6 @@ macro_rules! microstr {
         {
             const STR : &str = $s;
             const LEN : usize = STR.len();
-            // SAFETY: &str always contains valid UTF-8 bytes in 0..LEN bounds
             unsafe { $crate::MicroStr::<{LEN}>::from_str_unchecked(STR) }
         }
     };

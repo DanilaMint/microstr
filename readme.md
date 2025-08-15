@@ -9,7 +9,7 @@ Ideal for `no_std` environments, embedded systems, and performance-critical code
 
 ```toml
 [dependencies]
-microstr = "0.3"
+microstr = "0.4"
 ```
 
 ## What is MicroStr?
@@ -53,27 +53,12 @@ Enable optional features in `Cargo.toml`:
 
 ```toml
 [dependencies]
-microstr = { version = "0.3", features = ["std", "serde"] }
+microstr = { version = "0.4", features = ["std", "serde"] }
 ```
 
 | Feature | Description |
 |--------|-------------|
-| `std` (default: on) | Enables `Display`, `Debug`, `From<String>`, and `ToString`. Required for `serde`. |
-| `serde` | Enables `.to_json()` and `StackString::from_json()` with capacity checks. |
-
-### Example with `serde`
-
-```rust
-#[cfg(feature = "serde")]
-{
-    let s = microstr!("Hello", 11);
-    let json = s.to_json().unwrap();
-    assert_eq!(json, r#""hello""#);
-
-    let s2 = MicroStr::from_json(r#""world""#).unwrap();
-    assert_eq!(s2, "world");
-}
-```
+| `std` (default: on) | Enables `Display`, `Debug`, `From<String>`, and `ToString`. |
 
 ## Why MicroStr?
 
@@ -92,7 +77,6 @@ microstr = { version = "0.3", features = ["std", "serde"] }
 | Truncation on write | ✅ Yes (safe)             | ❌ Returns `Err` on overflow |
 | `const fn` support  | ✅ `from_const`, `new`    | Limited                  |
 | Macro convenience   | ✅ `microstr!`            | ❌ No built-in macro     |
-| `serde` support     | ✅ Optional               | ❌ No                    |
 
 `microstr` prioritizes **zero-cost truncation** and **ease of use** in embedded contexts.
 

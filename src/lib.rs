@@ -38,7 +38,7 @@ use core::{
     cmp::PartialEq, 
     fmt, 
     ops::{Deref, DerefMut}, 
-    ptr, 
+    ptr,
     str::{from_utf8_unchecked, from_utf8_unchecked_mut}
 };
 
@@ -93,6 +93,7 @@ impl<const CAP: usize> MicroStr<CAP>
     /// assert_eq!(s.len(), 0);
     /// assert_eq!(s.capacity(), 10);
     /// ```
+    #[inline]
     pub const fn new() -> Self {
         Self {
             buffer: [0; CAP],
@@ -127,7 +128,7 @@ impl<const CAP: usize> MicroStr<CAP>
     /// }
     /// ```
     #[must_use = "this returns a new `MicroStr`, it does not modify `self`"]
-    pub fn from_str(s: &str) -> Result<Self, (Self, usize)> {
+    pub const fn from_str(s: &str) -> Result<Self, (Self, usize)> {
         let mut result = Self::new();
         match result.push_str(s) {
             Ok(()) => {Ok(result)},
@@ -157,89 +158,52 @@ impl<const CAP: usize> MicroStr<CAP>
     /// assert_eq!(s.as_str(), "Hello"); // Truncated
     /// ```
     pub const fn from_const(s: &str) -> Self {
-        let mut buffer = [0u8; CAP];
-        let mut len = const_min(s.len(), CAP);
-        let s_bytes = s.as_bytes();
-
-        // SAFETY: Copy bytes minimal of str length and buffer size
+        let mut result = Self::new();
+        let truncating = utf8_truncator(s, CAP);
         unsafe {
-            ptr::copy_nonoverlapping(s.as_ptr(), buffer.as_mut_ptr(), const_min(s.len(), CAP));
+            ptr::copy_nonoverlapping(s.as_ptr(), result.as_mut_ptr(), truncating);
         }
-
-        // Character may be splitted
-        // Checking: if last byte is continue-byte (10xxxxxx), go back.
-        while len > 0
-            && len < s_bytes.len()
-            && len < CAP
-            && (buffer[len - 1] & 0b1100_0000 == 0b1000_0000)
-        {
-            len -= 1;
-        }
-
-        // If character is splitted and last byte is begin of 2-, 3- or 4-byte
-        // sequense and all bytes dont fit, go back too.
-        if len > 0 && len < CAP && len < s_bytes.len() {
-            let last_byte = buffer[len - 1];
-            match last_byte {
-                0b1100_0000..=0b1101_1111 => {
-                    if len == CAP || len == s_bytes.len() {
-                    } else if s_bytes[len] & 0b1100_0000 != 0b1000_0000 {
-                        len -= 1;
-                    }
-                }
-                0b1110_0000..=0b1110_1111 => {
-                    if len + 1 >= CAP || len + 1 >= s_bytes.len() {
-                        len -= 1;
-                    } else if (s_bytes[len] & 0b1100_0000 != 0b1000_0000)
-                        || (s_bytes[len + 1] & 0b1100_0000 != 0b1000_0000)
-                    {
-                        len -= 1;
-                    }
-                }
-                0b1111_0000..=0b1111_0111 => {
-                    if len + 2 >= CAP || len + 2 >= s_bytes.len() {
-                        len -= 1;
-                    } else if (s_bytes[len] & 0b1100_0000 != 0b1000_0000)
-                        || (s_bytes[len + 1] & 0b1100_0000 != 0b1000_0000)
-                        || (s_bytes[len + 2] & 0b1100_0000 != 0b1000_0000)
-                    {
-                        len -= 1;
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        Self { buffer, len }
+        result.len = truncating;
+        result
     }
 
     /// Constructs a `MicroStr` from a raw byte buffer.
     ///
-    /// The string length is determined by the first null byte (`0x00`) in the buffer.
-    /// The bytes before the null terminator must form a valid UTF-8 sequence.
+    /// Copies up to `min(N, CAP)` bytes from the input buffer `buf` into the `MicroStr`.
+    /// The resulting string length is exactly `min(N, CAP)` bytes.
     ///
     /// # Safety
     ///
-    /// - The buffer must contain valid UTF-8 data up to the first `0x00` byte.
-    /// - The buffer must be exactly `CAP` bytes long.
+    /// - The caller must ensure that the first `min(N, CAP)` bytes of `buf` form a **valid UTF-8 sequence**.
+    /// - If this invariant is violated, any operation that relies on valid UTF-8 (e.g., `as_str`)
+    ///   may result in **undefined behavior**.
+    ///
+    /// # Type Parameters
+    ///
+    /// - `N`: The length of the input byte array.
+    ///
+    /// # Panics
+    ///
+    /// This function does not panic.
     ///
     /// # Example (unsafe)
     ///
     /// ```rust
     /// use microstr::*;
-    /// let buf = *b"Hello\0\0\0\0\0";
-    /// let s = unsafe { MicroStr::<10>::from_raw_buffer(buf) };
-    /// assert_eq!(s.as_str(), "Hello");
+    ///
+    /// let buf = *b"Hello, world!";
+    /// let s = unsafe { MicroStr::<5>::from_raw_buffer(buf) };
+    /// assert_eq!(s.as_str(), "Hello"); // First 5 bytes
+    ///
+    /// let small_buf = *b"Hi";
+    /// let s = unsafe { MicroStr::<10>::from_raw_buffer(small_buf) };
+    /// assert_eq!(s.as_str(), "Hi"); // Entire buffer copied
     /// ```
-    pub unsafe fn from_raw_buffer(buf: [u8; CAP]) -> Self {
-        let mut len = 0;
-        for byte in &buf {
-            if *byte == 0 {
-                break;
-            }
-            len += 1;
-        }
-        Self { buffer: buf, len }
+    pub const unsafe fn from_raw_buffer<const N: usize>(buf: [u8; N]) -> Self {
+        let len = const_min(N, CAP);
+        let mut buffer = [0; CAP];
+        ptr::copy_nonoverlapping(buf.as_ptr(), buffer.as_mut_ptr(), len);
+        Self { buffer, len }
     }
 
     /// Constructs a `MicroStr` from a string slice.
@@ -287,7 +251,7 @@ impl<const CAP: usize> MicroStr<CAP>
     /// assert_eq!(unsafe { *ptr }, b'H');
     /// ```
     #[inline]
-    pub fn as_ptr(&self) -> *const u8 {
+    pub const fn as_ptr(&self) -> *const u8 {
         self.buffer.as_ptr()
     }
 
@@ -306,7 +270,7 @@ impl<const CAP: usize> MicroStr<CAP>
     /// }
     /// ```
     #[inline]
-    pub fn as_mut_ptr(&mut self) -> *mut u8 {
+    pub const fn as_mut_ptr(&mut self) -> *mut u8 {
         self.buffer.as_mut_ptr()
     }
 
@@ -322,7 +286,7 @@ impl<const CAP: usize> MicroStr<CAP>
     /// assert_eq!(s.capacity(), 32);
     /// ```
     #[inline]
-    pub fn capacity(&self) -> usize {
+    pub const fn capacity(&self) -> usize {
         CAP
     }
 
@@ -338,7 +302,7 @@ impl<const CAP: usize> MicroStr<CAP>
     /// assert_eq!(s.extra_capacity(), 8);
     /// ```
     #[inline]
-    pub fn extra_capacity(&self) -> usize {
+    pub const fn extra_capacity(&self) -> usize {
         CAP - self.len
     }
 
@@ -354,7 +318,7 @@ impl<const CAP: usize> MicroStr<CAP>
     /// assert!(!s.is_empty());
     /// ```
     #[inline]
-    pub fn is_empty(&self) -> bool {
+    pub const fn is_empty(&self) -> bool {
         self.len == 0
     }
 
@@ -370,7 +334,7 @@ impl<const CAP: usize> MicroStr<CAP>
     /// assert_eq!(s.bytes_len(), 4); // 4-byte UTF-8 emoji
     /// ```
     #[inline]
-    pub fn bytes_len(&self) -> usize {
+    pub const fn bytes_len(&self) -> usize {
         self.len
     }
 
@@ -406,7 +370,7 @@ impl<const CAP: usize> MicroStr<CAP>
     /// unsafe { s.push_unchecked('A') };
     /// assert_eq!(s.as_str(), "A");
     /// ```
-    pub unsafe fn push_unchecked(&mut self, ch: char) {
+    pub const unsafe fn push_unchecked(&mut self, ch: char) {
         let char_len = ch.len_utf8();
         let char_bytes = char_to_bytes_utf8(ch);
         let char_ptr = char_bytes.as_ptr();
@@ -434,7 +398,7 @@ impl<const CAP: usize> MicroStr<CAP>
     /// assert!(s.push('A').is_ok());
     /// assert!(s.push('B').is_err()); // No space
     /// ```
-    pub fn push(&mut self, ch: char) -> Result<(), ()> {
+    pub const fn push(&mut self, ch: char) -> Result<(), ()> {
         if ch.len_utf8() + self.len <= CAP {
             // SAFETY: checked length
             unsafe { self.push_unchecked(ch) };
@@ -458,7 +422,7 @@ impl<const CAP: usize> MicroStr<CAP>
     /// unsafe { s.push_str_unchecked("Hi") };
     /// assert_eq!(s.as_str(), "Hi");
     /// ```
-    pub unsafe fn push_str_unchecked(&mut self, s: &str) {
+    pub const unsafe fn push_str_unchecked(&mut self, s: &str) {
         ptr::copy_nonoverlapping(s.as_ptr(), self.as_mut_ptr().add(self.len), s.len());
         self.len += s.len();
     }
@@ -485,17 +449,19 @@ impl<const CAP: usize> MicroStr<CAP>
     /// assert_eq!(s.push_str("河🌍"), Err(3)); // Only "河" fits (3 bytes), "🌍" excluded
     /// assert_eq!(s.as_str(), "An河");
     /// ```
-    pub fn push_str(&mut self, s: &str) -> Result<(), usize> {
-        let truncated = s.truncate(self.extra_capacity());
-        let pushing_len = truncated.len();
+    pub const fn push_str(&mut self, s: &str) -> Result<(), usize> {
+        let truncating_len = utf8_truncator(s, self.extra_capacity());
 
-        unsafe { self.push_str_unchecked(truncated); };
-
-        if pushing_len == s.len() {
+        // SAFETY: `utf8_truncator` truncates string to valid utf-8
+        unsafe { ptr::copy_nonoverlapping(s.as_ptr(), self.as_mut_ptr().add(self.len), truncating_len) };
+        
+        self.len += truncating_len;
+        
+        if truncating_len == s.len() {
             return Ok(());
         }
         else {
-            return Err(pushing_len);
+            return Err(truncating_len);
         }
     }
 
@@ -582,7 +548,7 @@ impl<const CAP: usize> MicroStr<CAP>
     /// let buf = s.into_raw_buffer();
     /// assert_eq!(&buf[..2], b"Hi");
     /// ```
-    pub fn into_raw_buffer(self) -> [u8; CAP] {
+    pub const fn into_raw_buffer(self) -> [u8; CAP] {
         self.buffer
     }
 
@@ -601,9 +567,11 @@ impl<const CAP: usize> MicroStr<CAP>
     /// assert_eq!(s.as_str(), "");
     /// ```
     #[inline]
-    pub fn clear(&mut self) {
+    pub const fn clear(&mut self) {
         self.len = 0;
-        self.buffer.get_mut(0).map(|x| *x = b'\0');
+        if CAP > 0 {
+            self.buffer[0] = b'\0';
+        }
     }
 
     /// Truncates the string by index of **char**.
@@ -720,46 +688,24 @@ impl<const CAP: usize> fmt::Write for MicroStr<CAP> {
     }
 }
 
-trait BoundaryCheckedTruncate {
-    /// Truncates bytes to valid utf-8
-    fn truncate<'a>(&'a self, i : usize) -> &'a Self;
-}
-
-impl BoundaryCheckedTruncate for str {
-    fn truncate<'a>(&'a self, idx : usize) -> &'a Self {
-        if idx >= self.len() { return self; }
-        if idx == 0 { return ""; }
-
-        let bytes = self.as_bytes();
-
-        if !is_utf8_continuation(bytes[idx]) {
-            // SAFETY: Slice already have valid UTF-8:
-            // - first truncated byte isnt continue of multi-byte char
-            // - &str already contains valid bytes
-            return unsafe {from_utf8_unchecked(&bytes[..idx])}
+/// Returns nearest less idx to get valid UTF-8
+const fn utf8_truncator(s: &str, idx : usize) -> usize {
+    if idx >= s.len() { return s.len(); }
+    let bytes = s.as_bytes();
+    let mut i = idx;
+    while i > idx.saturating_sub(4) {
+        if !is_utf8_continuation(bytes[i]) {
+            break;
         }
-
-        let mut i = idx;
-
-        while i > 0 {
-            i -= 1;
-            let current_byte = bytes[i];
-            if !is_utf8_continuation(current_byte) {
-                return unsafe { from_utf8_unchecked(&bytes[..i]) };
-            }
-            if i <= idx.saturating_sub(4) {
-                // Max UTF-8 sequence is 4 bytes
-                break;
-            }
-        }
-        unsafe { from_utf8_unchecked(&bytes[..i]) }
+        i -= 1;
     }
+    return i;
 }
 
 
 /// Returns `true` if the byte is a UTF-8 continuation byte (10xxxxxx)
 #[inline(always)]
-fn is_utf8_continuation(byte : u8) -> bool {
+const fn is_utf8_continuation(byte : u8) -> bool {
     byte & 0b1100_0000 == 0b1000_0000
 }
 

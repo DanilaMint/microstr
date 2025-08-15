@@ -1,6 +1,8 @@
 use core::fmt::Write;
 
-use super::{MicroStr, microstr, BoundaryCheckedTruncate};
+use crate::utf8_truncator;
+
+use super::{MicroStr, microstr};
 
 /* BASE METHODS */
 #[test]
@@ -28,14 +30,15 @@ fn from_const() {
 
 #[test]
 fn from_raw_buffer() {
-    let buffer = [b'R', b'a', b'w', 0, 0, 0, 0, 0];
-    let s = unsafe { MicroStr::from_raw_buffer(buffer) };
+    let buffer = [b'R', b'a', b'w'];
+    let s = unsafe { MicroStr::<8>::from_raw_buffer(buffer) };
     assert_eq!(s.as_str(), "Raw");
 }
 
 #[test]
 fn from_str_unchecked() {
     let s = unsafe { MicroStr::<15>::from_str_unchecked("Hello, world") };
+    assert_eq!(s.as_str(), "Hello, world");
 }
 
 #[test]
@@ -165,26 +168,31 @@ fn fmt() {
 }
 
 #[test]
-fn truncate_str() {
-    assert_eq!("Hello, world!".truncate(0), "");
-    assert_eq!("Hello, world!".truncate(10), "Hello, wor");
-    assert_eq!("Hello, world!".truncate(20), "Hello, world!");
+fn truncator() {
+    let s = "Hello, world";
+    assert_eq!(utf8_truncator(s, 0), 0);    // ""
+    assert_eq!(utf8_truncator(s, 20), 12);  // "Hello, world"
+    assert_eq!(utf8_truncator(s, 10), 10);  // "Hello, wor"
 
-    assert_eq!("Привет мир".truncate(4), "Пр");
-    assert_eq!("Привет мир".truncate(5), "Пр");
-    assert_eq!("Привет мир".truncate(6), "При");
+    let s = "Привет, мир";
+    assert_eq!(utf8_truncator(s, 10), 10);  // "Приве"
+    assert_eq!(utf8_truncator(s, 11), 10);  // "Приве"
+    assert_eq!(utf8_truncator(s, 12), 12);  // "Привет"
+    assert_eq!(utf8_truncator(s, 13), 13);  // "Привет,"
 
-    assert_eq!("你好，世界！".truncate(3), "你");
-    assert_eq!("你好，世界！".truncate(4), "你");
-    assert_eq!("你好，世界！".truncate(5), "你");
-    assert_eq!("你好，世界！".truncate(6), "你好");
+    let s = "你好，世界";
+    assert_eq!(utf8_truncator(s, 3), 3);  // "你"
+    assert_eq!(utf8_truncator(s, 4), 3);  // "你"
+    assert_eq!(utf8_truncator(s, 5), 3);  // "你"
+    assert_eq!(utf8_truncator(s, 6), 6);  // "你好"
 
-    assert_eq!("🔥🦀💻".truncate(4), "🔥");
-    assert_eq!("🔥🦀💻".truncate(5), "🔥");
-    assert_eq!("🔥🦀💻".truncate(6), "🔥");
-    assert_eq!("🔥🦀💻".truncate(7), "🔥");
-    assert_eq!("🔥🦀💻".truncate(8), "🔥🦀");
-    assert_eq!("🔥🦀💻".truncate(12), "🔥🦀💻");
+    let s = "🔥🦀❗️";
+    assert_eq!(utf8_truncator(s, 3), 0);  // ""
+    assert_eq!(utf8_truncator(s, 4), 4);  // "🔥"
+    assert_eq!(utf8_truncator(s, 5), 4);  // "🔥"
+    assert_eq!(utf8_truncator(s, 6), 4);  // "🔥"
+    assert_eq!(utf8_truncator(s, 7), 4);  // "🔥"
+    assert_eq!(utf8_truncator(s, 8), 8);  // "🔥🦀"
 }
 
 /* STD ONLY */
