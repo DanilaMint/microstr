@@ -1,3 +1,5 @@
+// (M-RUST)
+
 #[macro_export]
 /// Creates a `MicroStr` containing the string slice.
 /// 
@@ -19,9 +21,8 @@
 macro_rules! microstr {
     ($s:expr) => {
         {
-            const STR : &str = $s;
-            const LEN : usize = STR.len();
-            unsafe { $crate::MicroStr::<{LEN}>::from_str_unchecked(STR) }
+            static STR : &str = $s;
+            unsafe { $crate::MicroStr::<{STR.len()}>::from_str_unchecked(STR) }
         }
     };
     ($s:expr, $cap:expr) => {

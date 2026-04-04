@@ -7,9 +7,11 @@
 A lightweight, stack-allocated string with fixed capacity and UTF-8 support.  
 Ideal for `no_std` environments, embedded systems, and performance-critical code.
 
+The code is formatted according to the [M-RUST](https://github.com/DanilaMint/formating/blob/main/rust.md) standard.
+
 ```toml
 [dependencies]
-microstr = "0.4"
+microstr = "0.4.1"
 ```
 
 ## What is MicroStr?
@@ -58,7 +60,7 @@ microstr = { version = "0.4", features = ["std", "serde"] }
 
 | Feature | Description |
 |--------|-------------|
-| `std` (default: on) | Enables `Display`, `Debug`, `From<String>`, and `ToString`. |
+| `std` (default: on) | Enables `From<String>`, and `Into<String>`. |
 
 ## Why MicroStr?
 

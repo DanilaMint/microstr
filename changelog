@@ -1,5 +1,10 @@
 # ChangeLog
 
+## 0.4.1
+### Changed:
+- Code had been formated by [M-RUST](https://github.com/DanilaMint/formating/blob/main/rust.md)
+- Implementations of `Debug` and `Display` moved to `lib.rs`
+
 ## 0.4
 ### Added:
 - `utf8_truncator` for safe truncating UTF-8

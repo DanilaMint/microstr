@@ -1,6 +1,6 @@
 [package]
 name = "microstr"
-version = "0.4.0"
+version = "0.4.1"
 edition = "2021"
 description = "Stack-allocated string with fixed capacity"
 license = "MIT"

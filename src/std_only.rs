@@ -1,40 +1,6 @@
-use std::fmt;
-use core::fmt::Formatter;
+// (M-RUST)
+
 use super::MicroStr;
-
-impl<const CAP: usize> fmt::Debug for MicroStr<CAP> {
-    /// Formats the `MicroStr` for debugging.
-    ///
-    /// Output format: `MicroStr<{CAP}>"{content}"`.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use microstr::*;
-    /// let s = microstr!("test", 10);
-    /// assert_eq!(format!("{:?}", s), "MicroStr<10>{\"test\"}");
-    /// ```
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "MicroStr<{}>{{\"{}\"}}", CAP, self.as_str())
-    }
-}
-
-impl<const CAP: usize> fmt::Display for MicroStr<CAP> {
-    /// Formats the `MicroStr` as a regular string.
-    ///
-    /// Useful for printing.
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use microstr::*;
-    /// let s = microstr!("Hello", 10);
-    /// assert_eq!(format!("{}", s), "Hello");
-    /// ```
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
 
 impl<const CAP: usize> From<String> for MicroStr<CAP> {
     /// Converts a `String` into a `MicroStr`, truncating if necessary.

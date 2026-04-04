@@ -1,4 +1,5 @@
-#![cfg_attr(not(feature = "std"), no_std)]
+// (M-RUST)
+
 //! # MicroStr — Fixed-capacity stack-allocated string
 //!
 //! A lightweight, stack-allocated string type with fixed capacity and UTF-8 support.
@@ -27,6 +28,8 @@
 //! assert_eq!(s.as_str(), "Hello!");
 //! ```
 
+#![cfg_attr(not(feature = "std"), no_std)]
+
 #[cfg(test)]
 mod tests;
 #[cfg(feature = "std")]
@@ -36,7 +39,7 @@ mod macros;
 
 use core::{
     cmp::PartialEq, 
-    fmt, 
+    fmt,
     ops::{Deref, DerefMut}, 
     ptr,
     str::{from_utf8_unchecked, from_utf8_unchecked_mut}
@@ -77,8 +80,7 @@ pub struct MicroStr<const CAP: usize> {
     len: usize,
 }
 
-impl<const CAP: usize> MicroStr<CAP>
-{
+impl<const CAP: usize> MicroStr<CAP> {
     /* ##### STRUCT BUILDING ##### */
     
     /// Creates an empty `MicroStr`.
@@ -160,6 +162,7 @@ impl<const CAP: usize> MicroStr<CAP>
     pub const fn from_const(s: &str) -> Self {
         let mut result = Self::new();
         let truncating = utf8_truncator(s, CAP);
+        // SAFETY: `utf8_truncator` safely truncate Unicode
         unsafe {
             ptr::copy_nonoverlapping(s.as_ptr(), result.as_mut_ptr(), truncating);
         }
@@ -250,7 +253,7 @@ impl<const CAP: usize> MicroStr<CAP>
     /// let ptr = s.as_ptr();
     /// assert_eq!(unsafe { *ptr }, b'H');
     /// ```
-    #[inline]
+    #[inline(always)]
     pub const fn as_ptr(&self) -> *const u8 {
         self.buffer.as_ptr()
     }
@@ -269,7 +272,7 @@ impl<const CAP: usize> MicroStr<CAP>
     ///     *ptr = b'X';
     /// }
     /// ```
-    #[inline]
+    #[inline(always)]
     pub const fn as_mut_ptr(&mut self) -> *mut u8 {
         self.buffer.as_mut_ptr()
     }
@@ -285,10 +288,8 @@ impl<const CAP: usize> MicroStr<CAP>
     /// let s: MicroStr<32> = MicroStr::new();
     /// assert_eq!(s.capacity(), 32);
     /// ```
-    #[inline]
-    pub const fn capacity(&self) -> usize {
-        CAP
-    }
+    #[inline(always)]
+    pub const fn capacity(&self) -> usize { CAP }
 
     /// Returns the number of unused bytes available for writing.
     ///
@@ -301,10 +302,8 @@ impl<const CAP: usize> MicroStr<CAP>
     /// let mut s = microstr!("Hi", 10);
     /// assert_eq!(s.extra_capacity(), 8);
     /// ```
-    #[inline]
-    pub const fn extra_capacity(&self) -> usize {
-        CAP - self.len
-    }
+    #[inline(always)]
+    pub const fn extra_capacity(&self) -> usize { CAP - self.len }
 
     /// Returns `true` if the string has zero length.
     ///
@@ -317,10 +316,8 @@ impl<const CAP: usize> MicroStr<CAP>
     /// s.push('x');
     /// assert!(!s.is_empty());
     /// ```
-    #[inline]
-    pub const fn is_empty(&self) -> bool {
-        self.len == 0
-    }
+    #[inline(always)]
+    pub const fn is_empty(&self) -> bool { self.len == 0 }
 
     /// Returns the number of bytes currently used in the string.
     ///
@@ -333,10 +330,8 @@ impl<const CAP: usize> MicroStr<CAP>
     /// let s = microstr!("💖", 10);
     /// assert_eq!(s.bytes_len(), 4); // 4-byte UTF-8 emoji
     /// ```
-    #[inline]
-    pub const fn bytes_len(&self) -> usize {
-        self.len
-    }
+    #[inline(always)]
+    pub const fn bytes_len(&self) -> usize { self.len }
 
     /// Returns the number of Unicode scalar values (chars) in the string.
     ///
@@ -349,9 +344,8 @@ impl<const CAP: usize> MicroStr<CAP>
     /// let s = microstr!("💖Rust", 10);
     /// assert_eq!(s.len(), 5); // '💖' is one char, 'R','u','s','t'
     /// ```
-    pub fn len(&self) -> usize {
-        self.chars().count()
-    }
+    #[inline]
+    pub fn len(&self) -> usize { self.chars().count() }
 
     /* ##### PUSHERS ##### */
 
@@ -478,6 +472,7 @@ impl<const CAP: usize> MicroStr<CAP>
     /// let s = microstr!("Hello", 10);
     /// assert_eq!(s.as_str(), "Hello");
     /// ```
+    #[inline]
     pub fn as_str(&self) -> &str {
         // SAFETY: buffer always contains valid UTF-8
         unsafe { from_utf8_unchecked(self.as_bytes()) }
@@ -500,6 +495,7 @@ impl<const CAP: usize> MicroStr<CAP>
     /// s_mut.make_ascii_uppercase();
     /// assert_eq!(s.as_str(), "HELLO");
     /// ```
+    #[inline]
     pub fn as_str_mut(&mut self) -> &mut str {
         // SAFETY: buffer always contains valid UTF-8
         unsafe { from_utf8_unchecked_mut(self.as_mut_bytes()) }
@@ -515,9 +511,7 @@ impl<const CAP: usize> MicroStr<CAP>
     /// assert_eq!(s.as_bytes(), b"Hi");
     /// ```
     #[inline]
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.buffer[..self.len]
-    }
+    pub fn as_bytes(&self) -> &[u8] { &self.buffer[..self.len] }
 
     /// Returns a mutable byte slice of the current content.
     ///
@@ -532,9 +526,7 @@ impl<const CAP: usize> MicroStr<CAP>
     /// bytes[0] = b'x';
     /// assert_eq!(s.as_str(), "xbc");
     /// ```
-    pub fn as_mut_bytes(&mut self) -> &mut [u8] {
-        &mut self.buffer[..self.len]
-    }
+    pub fn as_mut_bytes(&mut self) -> &mut [u8] { &mut self.buffer[..self.len] }
 
     /// Consumes the `MicroStr` and returns the raw byte buffer.
     ///
@@ -548,9 +540,8 @@ impl<const CAP: usize> MicroStr<CAP>
     /// let buf = s.into_raw_buffer();
     /// assert_eq!(&buf[..2], b"Hi");
     /// ```
-    pub const fn into_raw_buffer(self) -> [u8; CAP] {
-        self.buffer
-    }
+    #[inline(always)]
+    pub const fn into_raw_buffer(self) -> [u8; CAP] { self.buffer }
 
     /* ##### MODIFICATORS ##### */
 
@@ -612,6 +603,7 @@ impl<const CAP: usize> Default for MicroStr<CAP> {
     /// Returns an empty `MicroStr`.
     ///
     /// Equivalent to [`MicroStr::new()`].
+    #[inline(always)]
     fn default() -> Self {
         Self::new()
     }
@@ -628,14 +620,12 @@ impl<const A: usize, const B: usize> PartialEq<MicroStr<B>> for MicroStr<A> {
     /// let b = microstr!("test", 15);
     /// assert_eq!(a, b);
     /// ```
-    fn eq(&self, other: &MicroStr<B>) -> bool {
-        self.as_str() == other.as_str()
-    }
+    #[inline]
+    fn eq(&self, other: &MicroStr<B>) -> bool { self.as_str() == other.as_str() }
 
     /// Compares two `MicroStr`s for inequality by content.
-    fn ne(&self, other: &MicroStr<B>) -> bool {
-        self.as_str() != other.as_str()
-    }
+    #[inline]
+    fn ne(&self, other: &MicroStr<B>) -> bool { self.as_str() != other.as_str() }
 }
 
 impl<const CAP: usize> Deref for MicroStr<CAP> {
@@ -651,6 +641,7 @@ impl<const CAP: usize> Deref for MicroStr<CAP> {
     /// assert!(s.starts_with("he"));
     /// assert_eq!(s.to_uppercase(), "HELLO");
     /// ```
+    #[inline]
     fn deref(&self) -> &Self::Target {
         self.as_str()
     }
@@ -669,6 +660,7 @@ impl<const CAP: usize> DerefMut for MicroStr<CAP> {
     /// s.make_ascii_uppercase();
     /// assert_eq!(s.as_str(), "RUST");
     /// ```
+    #[inline]
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.as_str_mut()
     }
@@ -688,6 +680,40 @@ impl<const CAP: usize> fmt::Write for MicroStr<CAP> {
     }
 }
 
+impl<const CAP: usize> fmt::Debug for MicroStr<CAP> {
+    /// Formats the `MicroStr` for debugging.
+    ///
+    /// Output format: `MicroStr<{CAP}>"{content}"`.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use microstr::*;
+    /// let s = microstr!("test", 10);
+    /// assert_eq!(format!("{:?}", s), "MicroStr<10>{\"test\"}");
+    /// ```
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "MicroStr<{}>{{\"{}\"}}", CAP, self.as_str())
+    }
+}
+
+impl<const CAP: usize> fmt::Display for MicroStr<CAP> {
+    /// Formats the `MicroStr` as a regular string.
+    ///
+    /// Useful for printing.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use microstr::*;
+    /// let s = microstr!("Hello", 10);
+    /// assert_eq!(format!("{}", s), "Hello");
+    /// ```
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// Returns nearest less idx to get valid UTF-8
 const fn utf8_truncator(s: &str, idx : usize) -> usize {
     if idx >= s.len() { return s.len(); }
@@ -702,22 +728,13 @@ const fn utf8_truncator(s: &str, idx : usize) -> usize {
     return i;
 }
 
-
 /// Returns `true` if the byte is a UTF-8 continuation byte (10xxxxxx)
 #[inline(always)]
-const fn is_utf8_continuation(byte : u8) -> bool {
-    byte & 0b1100_0000 == 0b1000_0000
-}
+const fn is_utf8_continuation(byte : u8) -> bool { byte & 0b1100_0000 == 0b1000_0000 }
 
 /// const-fn analog to min
 #[inline(always)]
-const fn const_min(a : usize, b : usize) -> usize {
-    if a <= b {
-        a
-    } else {
-        b
-    } 
-}
+const fn const_min(a : usize, b : usize) -> usize { if a <= b { a } else { b } }
 
 /// Converts a Unicode character into its UTF-8 byte representation.
 ///

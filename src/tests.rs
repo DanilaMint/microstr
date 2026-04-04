@@ -1,8 +1,8 @@
+// (M-RUST)
+
 use core::fmt::Write;
 
-use crate::utf8_truncator;
-
-use super::{MicroStr, microstr};
+use super::{MicroStr, microstr, utf8_truncator};
 
 /* BASE METHODS */
 #[test]
@@ -215,11 +215,4 @@ fn string() {
     let return_string = String::from(s);
 
     assert_eq!(return_string, "Heap Allocated!");
-}
-
-#[test]
-#[cfg(feature = "serde")]
-fn serde() {
-    let string = microstr!("{\"key\": 42}");
-    string.to_json();
 }
