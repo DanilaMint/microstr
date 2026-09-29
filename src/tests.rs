@@ -168,6 +168,55 @@ fn fmt() {
 }
 
 #[test]
+fn fmt_positional_args() {
+    let mut s = microstr!("", 50);
+    assert_eq!(s.write_fmt(format_args!("{0} + {1} = {0}{1}", 1, 2)), Ok(()));
+    assert_eq!(s.as_str(), "1 + 2 = 12");
+}
+
+#[test]
+fn fmt_format_specifiers() {
+    // `{:1}` — кейс из жалобы пользователя: ширина=1 для одиночного значения.
+    let mut s = microstr!("", 32);
+    assert_eq!(s.write_fmt(format_args!("v={:1}", 7_i32)), Ok(()));
+    assert_eq!(s.as_str(), "v=7");
+
+    // `{:.2}` — точность для float.
+    let mut s2 = microstr!("", 32);
+    assert_eq!(s2.write_fmt(format_args!("{:.2}", 3.14159_f32)), Ok(()));
+    assert_eq!(s2.as_str(), "3.14");
+
+    // `{:>5}` — выравнивание вправо.
+    let mut s3 = microstr!("", 32);
+    assert_eq!(s3.write_fmt(format_args!("{:>5}", "ab")), Ok(()));
+    assert_eq!(s3.as_str(), "   ab");
+}
+
+#[test]
+fn fmt_named_args() {
+    let mut s = microstr!("", 64);
+    let name = "world";
+    let n = 42;
+    assert_eq!(s.write_fmt(format_args!("hello, {name}! n={n}")), Ok(()));
+    assert_eq!(s.as_str(), "hello, world! n=42");
+}
+
+#[test]
+fn fmt_literal_short_circuit() {
+    // Проверяем ветку args.as_str() == Some: write! без плейсхолдеров.
+    let mut s = microstr!("", 16);
+    assert_eq!(write!(s, "literal"), Ok(()));
+    assert_eq!(s.as_str(), "literal");
+}
+
+#[test]
+fn fmt_overflow_returns_err() {
+    // Ёмкость 3, шаблон явно не помещается — должно вернуть Err.
+    let mut s = microstr!("", 3);
+    assert_eq!(s.write_fmt(format_args!("hello {}", "world")), Err(core::fmt::Error));
+}
+
+#[test]
 fn truncator() {
     let s = "Hello, world";
     assert_eq!(utf8_truncator(s, 0), 0);    // ""

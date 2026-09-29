@@ -671,12 +671,32 @@ impl<const CAP: usize> fmt::Write for MicroStr<CAP> {
         self.push(c).map_err(|_| fmt::Error)
     }
 
-    fn write_fmt(&mut self, args: fmt::Arguments<'_>) -> fmt::Result {
-        self.push_str(args.as_str().ok_or(fmt::Error)?).map_err(|_| fmt::Error)
-    }
-
     fn write_str(&mut self, s: &str) -> fmt::Result {
         self.push_str(s).map_err(|_| fmt::Error)
+    }
+
+    fn write_fmt(&mut self, args: fmt::Arguments<'_>) -> fmt::Result {
+        // Short-circuit для литералов без плейсхолдеров (write!(s, "hi")).
+        if let Some(s) = args.as_str() {
+            return self.write_str(s);
+        }
+
+        // Общий случай: адаптер делегирует в core::fmt::write.
+        struct Adapter<'a, const CAP: usize> {
+            target: &'a mut MicroStr<CAP>,
+        }
+
+        impl<'a, const CAP: usize> fmt::Write for Adapter<'a, CAP> {
+            fn write_str(&mut self, s: &str) -> fmt::Result {
+                self.target.write_str(s)
+            }
+
+            fn write_char(&mut self, c: char) -> fmt::Result {
+                self.target.write_char(c)
+            }
+        }
+
+        fmt::write(&mut Adapter { target: self }, args)
     }
 }
 
